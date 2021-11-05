@@ -17,10 +17,10 @@ import numpy as np
 
 from scipy.sparse import csr_matrix as csr
 from scipy.sparse import diags
-from scipy.sparse.linalg import cg
+from scipy.sparse.linalg import cg, bicg
 from scipy.sparse.linalg import spsolve
 
-from scipy.misc import imsave
+# from scipy.misc import imsave
 import os
 
 
@@ -234,11 +234,11 @@ def eq1(Wcm,Wuu,Wl,H,T,ak,wf):
 	M = diags(A.diagonal())
 	# print(A.shape)
 	# print(b.shape)
-	alpha = cg(A, b, x0=wf, tol=1e-05, maxiter=100, M=None, callback=None, atol=None)
+	alpha = cg(A, b, x0=wf, atol=1e-5, maxiter=100)
 	# alpha = spsolve(A, b)
 	# print(alpha)
 	# print(type(alpha[0]))
-	return alpha[0]*255
+	return alpha[0]
 	###solve
 
 	# A = Lifm + lamd*T
@@ -337,6 +337,49 @@ def other():
 		tri_map = dirc+'/'+f
 		main(img_path, tri_map, save_path)
 
+def info_flow(img, tmap):
+  img, tmap = img / 255.0, tmap / 255.0
+
+  X = []
+  [h, w, c] = img.shape
+  for i in range(h):
+    for j in range(w):
+      [r, g, b] = list(img[i, j, :])
+      X.append([r, g, b, i/h, j/w])
+  X = np.asarray(X)
+  alpha = tmap.ravel()
+
+
+  known = alpha.copy()
+  known[(alpha>0.9)|(alpha<0.1)] = 1
+  known[(alpha<0.9)&(alpha>0.1)] = 0
+  T = diags(known).tocsr()
+  print(T.count_nonzero())
+  # print(np.sum(known==0))
+  # print(X[(alpha>0.1)&(alpha<0.9)].shape[0])
+  # exit()
+
+  Wcm = cm(img,X)
+  # Wcm = csr((h*w,h*w))
+  wk,H = ku(img,tmap,X)
+  # H = csr((h*w,h*w))
+  # wk = csr((wk.shape))
+  Wuu = intra_u(img,tmap,X)
+  # Wuu = csr((h*w,h*w))
+  Wl = local(img,tmap)
+
+  ak = alpha.copy()
+  ak[ak<0.9] = 0 #set all non foreground pixels to 0
+  ak[ak>=0.9] = 1 #set all foreground pixels to 1
+
+  calc_alpha = eq1(Wcm,Wuu,Wl,H,T,ak,wk)
+  print(calc_alpha.max(), calc_alpha.min())
+  calc_alpha[alpha==1] = 1
+  calc_alpha[alpha==0] = 0
+  # calc_alpha[calc_alpha>0.2] = 1
+  # calc_alpha[calc_alpha<0.07] = 0
+
+  return calc_alpha.reshape((h, w))
 
 if __name__ == "__main__":
 	# main()
